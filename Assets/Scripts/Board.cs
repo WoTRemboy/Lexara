@@ -3,7 +3,22 @@ using UnityEngine;
 [DefaultExecutionOrder(-1)]
 public class Board : MonoBehaviour
 {
-    private static readonly KeyCode[] SUPPORTED_KEYS = new KeyCode[] {
+    // --- НОВОЕ ---------------------------------------------------------------
+#if UNITY_IOS || UNITY_ANDROID
+    private TouchScreenKeyboard keyboard;
+    private string previousKeyboardText = "";
+
+     private void CloseKeyboard()
+    {
+        TouchScreenKeyboard.hideInput = true;
+        keyboard.active = false;
+        keyboard = null;
+        previousKeyboardText = "";
+    }
+#endif
+    // ------------------------------------------------------------------------
+
+    private static readonly KeyCode[] SUPPORTED_KEYS = {
         KeyCode.A, KeyCode.B, KeyCode.C, KeyCode.D, KeyCode.E, KeyCode.F,
         KeyCode.G, KeyCode.H, KeyCode.I, KeyCode.J, KeyCode.K, KeyCode.L,
         KeyCode.M, KeyCode.N, KeyCode.O, KeyCode.P, KeyCode.Q, KeyCode.R,
@@ -11,7 +26,7 @@ public class Board : MonoBehaviour
         KeyCode.Y, KeyCode.Z,
     };
 
-    private static readonly string[] SEPARATOR = new string[] { "\r\n", "\r", "\n" };
+    private static readonly string[] SEPARATOR = { "\r\n", "\r", "\n" };
 
     private Row[] rows;
     private int rowIndex;
@@ -33,51 +48,100 @@ public class Board : MonoBehaviour
     public GameObject newWordButton;
     public GameObject invalidWordText;
 
-    private void Awake()
-    {
-        rows = GetComponentsInChildren<Row>();
-    }
+    // ──────────────────────────────────────────────────────────────────────────
+    #region Unity Lifecycle
+    private void Awake()               => rows = GetComponentsInChildren<Row>();
 
-    private void Start()
-    {
-        LoadData();
-        NewGame();
-    }
+    private void Start()               { LoadData(); NewGame(); }
 
+    private void OnEnable()            { tryAgainButton.SetActive(false); newWordButton.SetActive(false); }
+
+    private void OnDisable()           { tryAgainButton.SetActive(true);  newWordButton.SetActive(true);  }
+    #endregion
+    // ──────────────────────────────────────────────────────────────────────────
+    #region Public API
+    public void NewGame()              { ClearBoard(); SetRandomWord();   enabled = true; }
+
+    public void TryAgain()             { ClearBoard();                    enabled = true; }
+    #endregion
+    // ──────────────────────────────────────────────────────────────────────────
     private void LoadData()
     {
-        TextAsset textFile = Resources.Load("official_wordle_common") as TextAsset;
-        solutions = textFile.text.Split(SEPARATOR, System.StringSplitOptions.None);
+        TextAsset t = Resources.Load<TextAsset>("official_wordle_common");
+        solutions   = t.text.Split(SEPARATOR, System.StringSplitOptions.None);
 
-        textFile = Resources.Load("official_wordle_all") as TextAsset;
-        validWords = textFile.text.Split(SEPARATOR, System.StringSplitOptions.None);
-    }
-
-    public void NewGame()
-    {
-        ClearBoard();
-        SetRandomWord();
-
-        enabled = true;
-    }
-
-    public void TryAgain()
-    {
-        ClearBoard();
-
-        enabled = true;
+        t           = Resources.Load<TextAsset>("official_wordle_all");
+        validWords  = t.text.Split(SEPARATOR, System.StringSplitOptions.None);
     }
 
     private void SetRandomWord()
     {
-        word = solutions[Random.Range(0, solutions.Length)];
-        word = word.ToLower().Trim();
+        word = solutions[Random.Range(0, solutions.Length)].ToLower().Trim();
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
     private void Update()
     {
         Row currentRow = rows[rowIndex];
 
+#if UNITY_IOS || UNITY_ANDROID
+        HandleTouchScreenKeyboard(currentRow);
+#else
+        HandleEditorKeyboard(currentRow);
+#endif
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+    #region Input Handlers
+#if UNITY_IOS || UNITY_ANDROID
+    // ——— Мобильная системная клавиатура ———
+    private void HandleTouchScreenKeyboard(Row currentRow)
+    {
+        // Открываем клавиатуру, если она ещё не отображается
+        if (keyboard == null || !TouchScreenKeyboard.visible)
+        {
+            keyboard           = TouchScreenKeyboard.Open(
+                "", TouchScreenKeyboardType.Default, false, false, false, false, "Enter word");
+            previousKeyboardText = "";
+            return;
+        }
+
+        // Считываем текущее содержимое поля ввода
+        string text = keyboard.text.ToLower();
+
+        // BACKSPACE: пользователь стер символ
+        if (text.Length < previousKeyboardText.Length && columnIndex > 0)
+        {
+            columnIndex--;
+            currentRow.tiles[columnIndex].SetLetter('\0');
+            currentRow.tiles[columnIndex].SetState(emptyState);
+            invalidWordText.SetActive(false);
+        }
+        // ДОПИСАЛИ СИМВОЛ
+        else if (text.Length > previousKeyboardText.Length)
+        {
+            char ch = text[^1];
+
+            if (ch >= 'a' && ch <= 'z')
+            {
+                currentRow.tiles[columnIndex].SetLetter(ch);
+                currentRow.tiles[columnIndex].SetState(occupiedState);
+                columnIndex++;
+            }
+        }
+
+        previousKeyboardText = text;
+
+        // Автосабмит, когда строка заполнена
+        if (columnIndex >= currentRow.tiles.Length)
+        {
+            SubmitRow(currentRow);
+        }
+    }
+#endif
+
+    // ——— Старый путь для редактора/ПК ———
+    private void HandleEditorKeyboard(Row currentRow)
+    {
         if (Input.GetKeyDown(KeyCode.Backspace))
         {
             columnIndex = Mathf.Max(columnIndex - 1, 0);
@@ -87,9 +151,9 @@ public class Board : MonoBehaviour
         }
         else if (columnIndex >= currentRow.tiles.Length)
         {
-            if (Input.GetKeyDown(KeyCode.Return)) {
+            // В редакторе по‑старому жмём Enter
+            if (Input.GetKeyDown(KeyCode.Return))
                 SubmitRow(currentRow);
-            }
         }
         else
         {
@@ -103,20 +167,19 @@ public class Board : MonoBehaviour
                     break;
                 }
             }
+
+            if (columnIndex >= currentRow.tiles.Length)
+                SubmitRow(currentRow);
         }
     }
-
+    #endregion
+    // ──────────────────────────────────────────────────────────────────────────
+    #region Game Logic
     private void SubmitRow(Row row)
     {
-        // if (!IsValidWord(row.word))
-        // {
-        //     invalidWordText.SetActive(true);
-        //     return;
-        // }
-
         string remaining = word;
 
-        // Check correct/incorrect letters first
+        // 1. Правильные буквы
         for (int i = 0; i < row.tiles.Length; i++)
         {
             Tile tile = row.tiles[i];
@@ -124,9 +187,7 @@ public class Board : MonoBehaviour
             if (tile.letter == word[i])
             {
                 tile.SetState(correctState);
-
-                remaining = remaining.Remove(i, 1);
-                remaining = remaining.Insert(i, " ");
+                remaining = remaining.Remove(i, 1).Insert(i, " ");
             }
             else if (!word.Contains(tile.letter))
             {
@@ -134,7 +195,7 @@ public class Board : MonoBehaviour
             }
         }
 
-        // Check wrong spots after
+        // 2. Есть в слове, но не там
         for (int i = 0; i < row.tiles.Length; i++)
         {
             Tile tile = row.tiles[i];
@@ -144,10 +205,8 @@ public class Board : MonoBehaviour
                 if (remaining.Contains(tile.letter))
                 {
                     tile.SetState(wrongSpotState);
-
-                    int index = remaining.IndexOf(tile.letter);
-                    remaining = remaining.Remove(index, 1);
-                    remaining = remaining.Insert(index, " ");
+                    int idx = remaining.IndexOf(tile.letter);
+                    remaining = remaining.Remove(idx, 1).Insert(idx, " ");
                 }
                 else
                 {
@@ -157,6 +216,9 @@ public class Board : MonoBehaviour
         }
 
         if (HasWon(row)) {
+    #if UNITY_IOS || UNITY_ANDROID
+            CloseKeyboard();
+    #endif
             enabled = false;
         }
 
@@ -164,59 +226,30 @@ public class Board : MonoBehaviour
         columnIndex = 0;
 
         if (rowIndex >= rows.Length) {
+    #if UNITY_IOS || UNITY_ANDROID
+            CloseKeyboard();
+    #endif
             enabled = false;
         }
     }
 
-    private bool IsValidWord(string word)
-    {
-        for (int i = 0; i < validWords.Length; i++)
-        {
-            if (string.Equals(word, validWords[i], System.StringComparison.OrdinalIgnoreCase)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private bool HasWon(Row row)
     {
-        for (int i = 0; i < row.tiles.Length; i++)
-        {
-            if (row.tiles[i].state != correctState) {
-                return false;
-            }
-        }
-
+        foreach (var t in row.tiles)
+            if (t.state != correctState) return false;
         return true;
     }
 
     private void ClearBoard()
     {
-        for (int row = 0; row < rows.Length; row++)
-        {
-            for (int col = 0; col < rows[row].tiles.Length; col++)
+        foreach (var r in rows)
+            foreach (var t in r.tiles)
             {
-                rows[row].tiles[col].SetLetter('\0');
-                rows[row].tiles[col].SetState(emptyState);
+                t.SetLetter('\0');
+                t.SetState(emptyState);
             }
-        }
-
         rowIndex = 0;
         columnIndex = 0;
     }
-
-    private void OnEnable()
-    {
-        tryAgainButton.SetActive(false);
-        newWordButton.SetActive(false);
-    }
-
-    private void OnDisable()
-    {
-        tryAgainButton.SetActive(true);
-        newWordButton.SetActive(true);
-    }
-
+    #endregion
 }
