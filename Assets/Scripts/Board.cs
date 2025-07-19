@@ -1,9 +1,7 @@
 using UnityEngine;
 
 [DefaultExecutionOrder(-1)]
-public class Board : MonoBehaviour
-{
-    // --- НОВОЕ ---------------------------------------------------------------
+public class Board : MonoBehaviour {
 #if UNITY_IOS || UNITY_ANDROID
     private TouchScreenKeyboard keyboard;
     private string previousKeyboardText = "";
@@ -16,7 +14,6 @@ public class Board : MonoBehaviour
         previousKeyboardText = "";
     }
 #endif
-    // ------------------------------------------------------------------------
 
     private static readonly KeyCode[] SUPPORTED_KEYS = {
         KeyCode.A, KeyCode.B, KeyCode.C, KeyCode.D, KeyCode.E, KeyCode.F,
@@ -65,8 +62,7 @@ public class Board : MonoBehaviour
     public void TryAgain()             { ClearBoard();                    enabled = true; }
     #endregion
     // ──────────────────────────────────────────────────────────────────────────
-    private void LoadData()
-    {
+    private void LoadData() {
         TextAsset t = Resources.Load<TextAsset>("official_wordle_common");
         solutions   = t.text.Split(SEPARATOR, System.StringSplitOptions.None);
 
@@ -74,12 +70,10 @@ public class Board : MonoBehaviour
         validWords  = t.text.Split(SEPARATOR, System.StringSplitOptions.None);
     }
 
-    private void SetRandomWord()
-    {
+    private void SetRandomWord() {
         word = solutions[Random.Range(0, solutions.Length)].ToLower().Trim();
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
     private void Update()
     {
         Row currentRow = rows[rowIndex];
@@ -93,22 +87,20 @@ public class Board : MonoBehaviour
     // ──────────────────────────────────────────────────────────────────────────
     #region Input Handlers
 #if UNITY_IOS || UNITY_ANDROID
-    // ——— Мобильная системная клавиатура ———
     private void HandleTouchScreenKeyboard(Row currentRow)
     {
-        // Открываем клавиатуру, если она ещё не отображается
         if (keyboard == null || !TouchScreenKeyboard.visible)
         {
-            keyboard           = TouchScreenKeyboard.Open(
-                "", TouchScreenKeyboardType.Default, false, false, false, false, "Enter word");
+            keyboard = TouchScreenKeyboard.Open(
+                "",
+                TouchScreenKeyboardType.Default,
+                false, false, false, false, "");
             previousKeyboardText = "";
             return;
         }
 
-        // Считываем текущее содержимое поля ввода
         string text = keyboard.text.ToLower();
 
-        // BACKSPACE: пользователь стер символ
         if (text.Length < previousKeyboardText.Length && columnIndex > 0)
         {
             columnIndex--;
@@ -116,7 +108,6 @@ public class Board : MonoBehaviour
             currentRow.tiles[columnIndex].SetState(emptyState);
             invalidWordText.SetActive(false);
         }
-        // ДОПИСАЛИ СИМВОЛ
         else if (text.Length > previousKeyboardText.Length)
         {
             char ch = text[^1];
@@ -131,7 +122,6 @@ public class Board : MonoBehaviour
 
         previousKeyboardText = text;
 
-        // Автосабмит, когда строка заполнена
         if (columnIndex >= currentRow.tiles.Length)
         {
             SubmitRow(currentRow);
@@ -139,7 +129,6 @@ public class Board : MonoBehaviour
     }
 #endif
 
-    // ——— Старый путь для редактора/ПК ———
     private void HandleEditorKeyboard(Row currentRow)
     {
         if (Input.GetKeyDown(KeyCode.Backspace))
@@ -151,7 +140,6 @@ public class Board : MonoBehaviour
         }
         else if (columnIndex >= currentRow.tiles.Length)
         {
-            // В редакторе по‑старому жмём Enter
             if (Input.GetKeyDown(KeyCode.Return))
                 SubmitRow(currentRow);
         }
@@ -179,7 +167,6 @@ public class Board : MonoBehaviour
     {
         string remaining = word;
 
-        // 1. Правильные буквы
         for (int i = 0; i < row.tiles.Length; i++)
         {
             Tile tile = row.tiles[i];
@@ -195,7 +182,6 @@ public class Board : MonoBehaviour
             }
         }
 
-        // 2. Есть в слове, но не там
         for (int i = 0; i < row.tiles.Length; i++)
         {
             Tile tile = row.tiles[i];
