@@ -23,8 +23,7 @@ The game is available on [Google Play](https://play.google.com/store/apps/detail
 
 ## Technologies
 
-The repository contains Unity code and resources, including:
-
+- **Unity** — core engine and toolchain.  
 - **C#** — game logic and scripts.  
 - **ShaderLab** — shaders for visual effects.  
 
